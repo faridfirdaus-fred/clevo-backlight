@@ -1,0 +1,17 @@
+# artefak build driver kernel
+*.ko
+*.o
+*.mod
+*.mod.c
+*.symvers
+*.order
+.tmp_versions/
+
+# sampah editor / OS
+*~
+.DS_Store
+*.swp
+
+# python
+__pycache__/
+*.pyc

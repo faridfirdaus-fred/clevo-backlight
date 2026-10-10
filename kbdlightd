@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+"""
+kbdlightd - daemon backlight keyboard Axioo Pongo 725 (Clevo NP50RNA)
+
+Kenapa perlu daemon ini:
+  Modul kernel tuxedo_keyboard membuat LED /sys/class/leds/rgb:kbd_backlight dan
+  MELAPORKAN tombol Fn+volume up/down sebagai event KEY_KBDILLUMUP/DOWN, tapi
+  TIDAK mengubah brightness sendiri (khusus keyboard RGB). Jadi butuh proses di
+  userspace yang menangkap event itu dan menulis ke LED.
+
+Kenapa memantau BEBERAPA device:
+  Kalau keyd (key remapper) jalan dengan "[ids] *", keyd akan EVIOCGRAB device
+  "TUXEDO Keyboard" dan meneruskan tombolnya lewat "keyd virtual keyboard".
+  Supaya tetap jalan baik keyd merebut device maupun tidak, daemon ini memantau
+  kedua-duanya, dengan debounce agar tidak dihitung dua kali.
+
+Tanpa dependensi eksternal.
+"""
+import glob
+import os
+import select
+import struct
+import sys
+import time
+
+LED = os.environ.get("KBDLIGHT_LED", "/sys/class/leds/rgb:kbd_backlight")
+BRIGHT = os.path.join(LED, "brightness")
+
+KEY_KBDILLUMTOGGLE = 228
+KEY_KBDILLUMDOWN = 229
+KEY_KBDILLUMUP = 230
+KEY_LIGHTS_TOGGLE = 542
+
+STEP = 64                      # 255 / 4 langkah, sama dengan CLI kbdlight
+EV_KEY = 0x01
+EVENT_FMT = "llHHi"
+EVENT_SIZE = struct.calcsize(EVENT_FMT)
+DEBOUNCE = 0.08                # detik
+RESCAN = 5                     # detik
+
+WANTED_NAMES = ("TUXEDO Keyboard", "keyd virtual keyboard")
+HANDLED = (KEY_KBDILLUMUP, KEY_KBDILLUMDOWN, KEY_KBDILLUMTOGGLE, KEY_LIGHTS_TOGGLE)
+
+_last = {}
+
+
+def log(*a):
+    print(*a, flush=True)
+
+
+def device_name(ev_sysfs):
+    try:
+        with open(os.path.join(ev_sysfs, "device/name")) as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def device_has_keys(ev_sysfs):
+    """Pastikan device ini memang mengiklankan tombol backlight."""
+    path = os.path.join(ev_sysfs, "device/capabilities/key")
+    try:
+        with open(path) as f:
+            toks = f.read().split()
+    except OSError:
+        return False
+    if not toks:
+        return False
+    # sysfs menulis word paling tinggi lebih dulu
+    words = [int(t, 16) for t in toks][::-1]
+    for k in HANDLED:
+        i, b = divmod(k, 64)
+        if i < len(words) and (words[i] >> b) & 1:
+            return True
+    return False
+
+
+def scan():
+    """Cari semua /dev/input/event* yang relevan."""
+    found = {}
+    for ev in sorted(glob.glob("/sys/class/input/event*")):
+        name = device_name(ev)
+        if name in WANTED_NAMES and device_has_keys(ev):
+            found["/dev/input/" + os.path.basename(ev)] = name
+    return found
+
+
+def read_brightness():
+    try:
+        with open(BRIGHT) as f:
+            return int(f.read().strip())
+    except OSError:
+        return 0
+
+
+def write_brightness(value):
+    value = max(0, min(255, value))
+    try:
+        with open(BRIGHT, "w") as f:
+            f.write(str(value))
+        return value
+    except OSError as e:
+        log(f"gagal tulis brightness: {e}")
+        return None
+
+
+def handle(code):
+    now = time.monotonic()
+    if now - _last.get(code, 0) < DEBOUNCE:
+        return                                   # event ganda dari keyd
+    _last[code] = now
+
+    cur = read_brightness()
+
+    if code == KEY_KBDILLUMUP:
+        new = 255 if cur == 0 else cur + STEP
+    elif code == KEY_KBDILLUMDOWN:
+        new = cur - STEP
+    elif code in (KEY_KBDILLUMTOGGLE, KEY_LIGHTS_TOGGLE):
+        new = 0 if cur > 0 else 255
+    else:
+        return
+
+    got = write_brightness(new)
+    if got is not None:
+        log(f"tombol {code}: brightness {cur} -> {got}")
+
+
+def main():
+    if not os.path.isdir(LED):
+        log("LED rgb:kbd_backlight tidak ada. Modul belum dimuat?")
+        log("Jalankan: sudo modprobe tuxedo_keyboard clevo_wmi clevo_acpi")
+        return 1
+
+    log("kbdlightd jalan, menunggu Fn + volume up/down...")
+    fds = {}
+    last_scan = 0.0
+
+    while True:
+        if time.monotonic() - last_scan > RESCAN or not fds:
+            last_scan = time.monotonic()
+            found = scan()
+            for path, name in found.items():
+                if path not in fds:
+                    try:
+                        fds[path] = (open(path, "rb", buffering=0), name)
+                        log(f"memantau {path} ({name})")
+                    except OSError as e:
+                        log(f"tidak bisa buka {path}: {e} (perlu grup 'input')")
+            # buang device yang sudah hilang
+            for path in list(fds):
+                if path not in found:
+                    try:
+                        fds[path][0].close()
+                    except OSError:
+                        pass
+                    del fds[path]
+                    log(f"berhenti memantau {path}")
+
+        if not fds:
+            time.sleep(2)
+            continue
+
+        try:
+            ready, _, _ = select.select([f for f, _ in fds.values()], [], [], 2)
+        except OSError:
+            fds.clear()
+            continue
+
+        for fd in ready:
+            path = next(p for p, (f, _) in fds.items() if f is fd)
+            try:
+                data = fd.read(EVENT_SIZE)
+            except OSError:
+                data = None
+            if not data or len(data) < EVENT_SIZE:
+                try:
+                    fd.close()
+                except OSError:
+                    pass
+                fds.pop(path, None)
+                continue
+            _, _, etype, code, value = struct.unpack(EVENT_FMT, data)
+            if etype == EV_KEY and value == 1:
+                handle(code)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        pass
