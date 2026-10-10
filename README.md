@@ -1,71 +1,71 @@
 # clevo-backlight
 
-Nyalakan dan atur **backlight keyboard** laptop **Clevo** (barebone **NP50RNA** dan sejenisnya) di Linux/Ubuntu — untuk keyboard RGB 1 zona.
+Turn on and control the **keyboard backlight** on **Clevo** laptops (barebone **NP50RNA** and similar) on Linux/Ubuntu — for single-zone RGB keyboards.
 
-> Di Ubuntu, tombol backlight keyboard tidak berfungsi karena firmware mengirim event-nya lewat **WMI/ACPI** dan Ubuntu tidak menyediakan drivernya. Repo ini memasang driver yang tepat **plus** sebuah CLI untuk mengendalikannya.
+> On Ubuntu the keyboard backlight keys do nothing because the firmware sends their events over **WMI/ACPI** and Ubuntu ships no driver for it. This repo installs the right driver **plus** a CLI to control it.
 
-**Kompatibel juga dengan laptop rebrand Clevo** — mis. **Axioo Pongo 725**, serta model lain yang memakai barebone Clevo/TUXEDO dengan keyboard RGB.
+**Also compatible with Clevo rebrands** — e.g. the **Axioo Pongo 725**, and other models built on a Clevo/TUXEDO barebone with an RGB keyboard.
 
 ---
 
-## Daftar isi
+## Table of contents
 
-- [Masalahnya](#masalahnya)
-- [Kompatibilitas](#kompatibilitas)
-- [Solusinya](#solusinya)
-- [Instalasi](#instalasi)
-- [Pemakaian CLI](#pemakaian-cli)
-- [Shortcut keyboard (niri / GNOME / KDE)](#shortcut-keyboard)
-- [Cara kerjanya](#cara-kerjanya)
-- [Pemecahan masalah](#pemecahan-masalah)
+- [The problem](#the-problem)
+- [Compatibility](#compatibility)
+- [The fix](#the-fix)
+- [Installation](#installation)
+- [CLI usage](#cli-usage)
+- [Keyboard shortcuts (niri / GNOME / KDE)](#keyboard-shortcuts)
+- [How it works](#how-it-works)
+- [Troubleshooting](#troubleshooting)
 - [Uninstall](#uninstall)
-- [Lisensi](#lisensi)
+- [License](#license)
 
 ---
 
-## Masalahnya
+## The problem
 
-Di laptop ini, **Fn + 1** (kipas) jalan di OS apa pun karena ditangani langsung oleh chip **EC**. Backlight keyboard tidak demikian:
+On this laptop, **Fn + 1** (fan) works under any OS because it is handled directly by the **EC** chip. The keyboard backlight is different:
 
-- Firmware mengirim event hotkey backlight lewat **WMI/ACPI**:
-  device ACPI `CLV0001`, GUID `ABBC0F6D-8EA1-11D1-00A0-C90629100000`.
-- **Ubuntu tidak menyediakan driver** untuk itu (driver-nya hanya ada di Windows).
-- Akibatnya `/sys/class/leds/` **tidak punya entri keyboard** sama sekali, dan tombol Fn-nya tidak melakukan apa-apa.
+- The firmware sends the backlight hotkey events over **WMI/ACPI**:
+  ACPI device `CLV0001`, GUID `ABBC0F6D-8EA1-11D1-00A0-C90629100000`.
+- **Ubuntu ships no driver** for it (the driver only exists on Windows).
+- As a result `/sys/class/leds/` has **no keyboard entry at all**, and the Fn keys do nothing.
 
-Cek sendiri:
+Check for yourself:
 
 ```bash
-ls /sys/class/leds/ | grep -i kbd     # kosong = belum ada driver
+ls /sys/class/leds/ | grep -i kbd     # empty = no driver yet
 ```
 
-## Kompatibilitas
+## Compatibility
 
-Cara ini bekerja pada laptop yang memakai **barebone Clevo** dengan keyboard RGB dan mengirim hotkey backlight lewat WMI/ACPI `CLV0001`.
+This works on laptops built on a **Clevo barebone** with an RGB keyboard that sends the backlight hotkey over WMI/ACPI `CLV0001`.
 
-| Perangkat | Status |
+| Device | Status |
 |---|---|
-| Clevo NP50RNA | ✅ diuji |
-| **Axioo Pongo 725** (rebrand NP50RNA) | ✅ diuji |
-| Laptop Clevo/TUXEDO lain dengan keyboard RGB 1 zona | ⚠️ kemungkinan besar jalan — cek dulu `ls /sys/class/leds/ \| grep kbd` setelah modul dimuat |
-| Clevo dengan keyboard RGB per-tombol (multi zona) | ❌ belum didukung (repo ini hanya menangani 1 zona) |
+| Clevo NP50RNA | ✅ tested |
+| **Axioo Pongo 725** (rebranded NP50RNA) | ✅ tested |
+| Other Clevo/TUXEDO laptops with a single-zone RGB keyboard | ⚠️ very likely works — check `ls /sys/class/leds/ \| grep kbd` after loading the module |
+| Clevo with per-key (multi-zone) RGB | ❌ not supported yet (this repo only handles a single zone) |
 
-Laptop **rebrand Clevo** (Axioo, TUXEDO, Schenker, XMG, System76, dll.) memakai firmware yang sama, jadi kalau LED `rgb:kbd_backlight` muncul setelah driver dimuat, CLI-nya langsung bisa dipakai.
+**Clevo rebrands** (Axioo, TUXEDO, Schenker, XMG, System76, etc.) use the same firmware, so if the `rgb:kbd_backlight` LED appears after the driver loads, the CLI works right away.
 
-## Solusinya
+## The fix
 
-Tiga lapis, semuanya dipasang otomatis oleh `install.sh`:
+Three layers, all installed automatically by `install.sh`:
 
-| Lapis | Apa | Kenapa |
+| Layer | What | Why |
 |---|---|---|
-| 1 | Driver kernel **`tuxedo_keyboard`** (+ `clevo_wmi`, `clevo_acpi`) dari fork NovaCustom | Membuat LED `/sys/class/leds/rgb:kbd_backlight` — inilah yang benar-benar menyalakan backlight |
-| 2 | Daemon **`kbdlightd`** | Driver hanya *melaporkan* tombol Fn sebagai event; daemon menerjemahkannya menjadi penulisan sysfs |
-| 3 | **DKMS** + `modules-load.d` + udev + systemd | Supaya semua tetap jalan setelah reboot dan setelah update kernel |
+| 1 | Kernel module **`tuxedo_keyboard`** (+ `clevo_wmi`, `clevo_acpi`) from NovaCustom's fork | Creates the LED `/sys/class/leds/rgb:kbd_backlight` — this is what actually lights up the backlight |
+| 2 | Daemon **`kbdlightd`** | The driver only *reports* the Fn keys as events; the daemon turns them into sysfs writes |
+| 3 | **DKMS** + `modules-load.d` + udev + systemd | So everything keeps working across reboots and kernel updates |
 
-Driver yang dipakai adalah [wessel-novacustom/clevo-keyboard](https://github.com/wessel-novacustom/clevo-keyboard) (turunan driver TUXEDO, dibuka untuk semua laptop Clevo). Sumbernya disertakan di folder [`clevo-keyboard/`](clevo-keyboard/).
+The driver used is [wessel-novacustom/clevo-keyboard](https://github.com/wessel-novacustom/clevo-keyboard) (a fork of the TUXEDO driver, opened up for all Clevo laptops). Its source is bundled in [`clevo-keyboard/`](clevo-keyboard/).
 
-## Instalasi
+## Installation
 
-Butuh Ubuntu/Debian dengan `dkms` dan kernel headers (installer yang memasangnya).
+Requires Ubuntu/Debian with `dkms` and kernel headers (the installer takes care of those).
 
 ```bash
 git clone https://github.com/faridfirdaus-fred/clevo-backlight.git
@@ -73,54 +73,54 @@ cd clevo-backlight
 sudo ./install.sh
 ```
 
-Setelah selesai, **logout lalu login sekali** (agar user masuk grup `input` sehingga kontrol tanpa sudo aktif).
+When it finishes, **log out and back in once** (so your user joins the `input` group, which enables control without sudo).
 
-Uji cepat:
+Quick test:
 
 ```bash
-kbdlight status     # harus menampilkan brightness 255/255
+kbdlight status     # should show brightness 255/255
 kbdlight off
 kbdlight on
 ```
 
-## Pemakaian CLI
+## CLI usage
 
-`kbdlight` dipasang ke `/usr/local/bin/kbdlight`.
+`kbdlight` is installed to `/usr/local/bin/kbdlight`.
 
 ```bash
-kbdlight                  # nyalakan penuh, putih
-kbdlight off              # matikan
-kbdlight toggle           # nyala <-> mati   (paling pas untuk shortcut)
-kbdlight up               # +64 terang
-kbdlight down             # -64 terang
-kbdlight up 32            # naikkan dengan langkah khusus
-kbdlight level 128        # set terang langsung (0-255)
-kbdlight 128              # singkatan dari "level 128"
+kbdlight                  # turn on fully, white
+kbdlight off              # turn off
+kbdlight toggle           # on <-> off   (best for a shortcut)
+kbdlight up               # +64 brightness
+kbdlight down             # -64 brightness
+kbdlight up 32            # increase by a custom step
+kbdlight level 128        # set brightness directly (0-255)
+kbdlight 128              # shorthand for "level 128"
 
-kbdlight color FF0000     # warna merah (hex)
-kbdlight color 0 255 0    # warna hijau (R G B)
-kbdlight FF0000           # singkatan dari "color FF0000"
-kbdlight "255 128 0"      # singkatan dari "color 255 128 0" (oranye)
+kbdlight color FF0000     # red (hex)
+kbdlight color 0 255 0    # green (R G B)
+kbdlight FF0000           # shorthand for "color FF0000"
+kbdlight "255 128 0"      # shorthand for "color 255 128 0" (orange)
 
-kbdlight status           # lihat kondisi sekarang
-kbdlight help             # bantuan
+kbdlight status           # show the current state
+kbdlight help             # help
 ```
 
-Warna terakhir disimpan di `~/.cache/kbdlight-color`, jadi `up` / `down` / `toggle` tidak menghapus warna yang sedang dipakai.
+The last color is stored in `~/.cache/kbdlight-color`, so `up` / `down` / `toggle` do not wipe the color currently in use.
 
-Kalau `notify-send` tersedia, setiap perubahan juga memunculkan notifikasi desktop — enak kalau dipanggil dari shortcut.
+If `notify-send` is available, every change also shows a desktop notification — handy when called from a shortcut.
 
-## Shortcut keyboard
+## Keyboard shortcuts
 
-Karena tombol Fn bawaan sering dipakai untuk hal lain (mis. volume), cara paling andal adalah memanggil CLI dari **shortcut OS**. Tidak perlu sudo.
+Since the built-in Fn keys are often taken by something else (e.g. volume), the most reliable approach is to call the CLI from an **OS shortcut**. No sudo needed.
 
 ### niri (`~/.config/niri/config.kdl`)
 
 ```kdl
 binds {
-    // Super + F1  -> nyala / mati
+    // Super + F1  -> on / off
     Mod+F1 { spawn "kbdlight" "toggle"; }
-    // Super + F2 / F3 -> atur terang
+    // Super + F2 / F3 -> adjust brightness
     Mod+F2 { spawn "kbdlight" "up"; }
     Mod+F3 { spawn "kbdlight" "down"; }
 }
@@ -128,7 +128,7 @@ binds {
 
 ### GNOME
 
-`Settings → Keyboard → Custom Shortcuts → +`, lalu:
+`Settings → Keyboard → Custom Shortcuts → +`, then:
 
 | Name | Command | Shortcut |
 |---|---|---|
@@ -138,7 +138,7 @@ binds {
 
 ### KDE Plasma
 
-`System Settings → Shortcuts → Custom → Add Command`, command `kbdlight toggle`, lalu set tombolnya.
+`System Settings → Shortcuts → Custom → Add Command`, command `kbdlight toggle`, then assign the key.
 
 ### Sway / i3
 
@@ -148,7 +148,7 @@ bindsym $mod+F2 exec kbdlight up
 bindsym $mod+F3 exec kbdlight down
 ```
 
-## Cara kerjanya
+## How it works
 
 ```
    Fn + volume up/down
@@ -157,68 +157,68 @@ bindsym $mod+F3 exec kbdlight down
    firmware (WMI/ACPI, CLV0001)
           │
           ▼
-   modul tuxedo_keyboard ──► /sys/class/leds/rgb:kbd_backlight   (hardware)
+   tuxedo_keyboard module ──► /sys/class/leds/rgb:kbd_backlight   (hardware)
           │                        ▲
-          │ event KEY_KBDILLUMUP   │ tulis brightness
+          │ event KEY_KBDILLUMUP   │ write brightness
           ▼                        │
    /dev/input/event* ──► kbdlightd ┘
 ```
 
-Detail yang perlu diketahui:
+Details worth knowing:
 
-- LED-nya bernama `rgb:kbd_backlight`. Keyboard ini **1 zona RGB**, dikontrol lewat `multi_intensity` (mis. `255 255 255`) dan `brightness` (0-255).
-- Modul kernel **hanya melaporkan** tombol sebagai `KEY_KBDILLUMUP` (230) / `KEY_KBDILLUMDOWN` (229) — ia **tidak** mengubah brightness sendiri. Karena itu perlu `kbdlightd`.
-- Kalau Anda memakai **keyd** dengan `[ids] *`, keyd akan meng-*grab* keyboard secara eksklusif (`EVIOCGRAB`) dan meneruskan tombol lewat device **"keyd virtual keyboard"**. Supaya tetap jalan dalam kedua kondisi, `kbdlightd` memantau **kedua** device (TUXEDO Keyboard *dan* keyd virtual keyboard) dengan debounce 80 ms.
-- Permission: `brightness` dimiliki `root:input`, sedangkan `multi_intensity` root-only. Installer menambahkan user ke grup `input` **dan** memasang udev rule. Catatan: `/sys/class/leds/rgb:kbd_backlight` adalah *symlink*, sehingga udev rule memakai `chgrp -H` dengan **path file target eksplisit** (`chgrp -R` default tidak mengikuti symlink).
+- The LED is named `rgb:kbd_backlight`. This keyboard is **single-zone RGB**, controlled through `multi_intensity` (e.g. `255 255 255`) and `brightness` (0-255).
+- The kernel module **only reports** the keys as `KEY_KBDILLUMUP` (230) / `KEY_KBDILLUMDOWN` (229) — it does **not** change brightness itself. That is why `kbdlightd` is needed.
+- If you use **keyd** with `[ids] *`, keyd will grab the keyboard exclusively (`EVIOCGRAB`) and forward its keys through the **"keyd virtual keyboard"** device. To keep working in both cases, `kbdlightd` watches **both** devices (TUXEDO Keyboard *and* keyd virtual keyboard) with an 80 ms debounce.
+- Permissions: `brightness` is owned by `root:input`, while `multi_intensity` is root-only. The installer adds your user to the `input` group **and** installs a udev rule. Note: `/sys/class/leds/rgb:kbd_backlight` is a *symlink*, so the udev rule uses `chgrp -H` with **explicit target paths** (`chgrp -R` defaults to not following symlinks).
 
-### File yang dipasang
+### Installed files
 
-| Path | Isi |
+| Path | Contents |
 |---|---|
-| `/usr/src/tuxedo-keyboard-3.2.10/` | sumber driver untuk DKMS |
+| `/usr/src/tuxedo-keyboard-3.2.10/` | driver source for DKMS |
 | `/usr/local/bin/kbdlight` | CLI |
 | `/usr/local/bin/kbdlightd` | daemon |
-| `/etc/modules-load.d/clevo-backlight.conf` | muat modul saat boot |
-| `/etc/udev/rules.d/99-clevo-backlight.rules` | izin LED untuk grup `input` |
-| `/etc/systemd/system/clevo-backlight.service` | set backlight putih saat boot |
-| `/etc/systemd/system/kbdlightd.service` | daemon hotkey |
+| `/etc/modules-load.d/clevo-backlight.conf` | load modules at boot |
+| `/etc/udev/rules.d/99-clevo-backlight.rules` | LED permissions for the `input` group |
+| `/etc/systemd/system/clevo-backlight.service` | set white backlight at boot |
+| `/etc/systemd/system/kbdlightd.service` | hotkey daemon |
 
-## Pemecahan masalah
+## Troubleshooting
 
 ```bash
-# 1. Modul sudah termuat?
+# 1. Is the module loaded?
 lsmod | grep -E "tuxedo|clevo"
 
-# 2. LED sudah muncul?
+# 2. Did the LED appear?
 ls /sys/class/leds/ | grep kbd
 
-# 3. Muat manual kalau perlu
+# 3. Load it manually if needed
 sudo modprobe tuxedo_keyboard clevo_wmi clevo_acpi
 
-# 4. Driver bicara ke hardware? (harus ada baris "Set Color ...")
+# 4. Is the driver talking to the hardware? (expect a "Set Color ..." line)
 sudo dmesg | grep -iE "tuxedo|clevo"
 
-# 5. Daemon memantau device apa?
+# 5. Which devices is the daemon watching?
 journalctl -u kbdlightd -n 20
-#    harus muncul: "memantau /dev/input/eventXX (TUXEDO Keyboard)"
-#                  "memantau /dev/input/eventYY (keyd virtual keyboard)"
+#    expect: "watching /dev/input/eventXX (TUXEDO Keyboard)"
+#            "watching /dev/input/eventYY (keyd virtual keyboard)"
 
-# 6. Tekan tombol sambil lihat log
+# 6. Press a key while watching the log
 journalctl -u kbdlightd -f
-#    harapannya: "tombol 230: brightness 255 -> ..."
+#    expect: "key 230: brightness 255 -> ..."
 
-# 7. Tidak bisa menulis tanpa sudo?
-groups | grep input      # kalau kosong: logout+login, atau `sudo usermod -aG input $USER`
+# 7. Cannot write without sudo?
+groups | grep input      # if empty: log out/in, or `sudo usermod -aG input $USER`
 ```
 
-Kalau LED tetap tidak muncul setelah reboot, DKMS mungkin gagal build untuk kernel baru:
+If the LED still does not appear after a reboot, DKMS may have failed to build for the new kernel:
 
 ```bash
 dkms status
-sudo dkms autoinstall        # bangun ulang untuk kernel yang sedang jalan
+sudo dkms autoinstall        # rebuild for the running kernel
 ```
 
-Kalau Anda pernah memasang versi lama repo ini (nama file `axioo-*`), `install.sh` akan menghapusnya otomatis di langkah 1/8.
+If you installed an older version of this repo (files named `axioo-*`), `install.sh` removes them automatically in step 1/8.
 
 ## Uninstall
 
@@ -231,11 +231,11 @@ sudo rm -f /etc/systemd/system/kbdlightd.service
 sudo rm -f /usr/local/bin/kbdlight /usr/local/bin/kbdlightd
 sudo systemctl daemon-reload
 sudo udevadm control --reload-rules
-# opsional: keluarkan dari grup input
+# optional: remove yourself from the input group
 sudo gpasswd -d "$USER" input
 ```
 
-## Lisensi
+## License
 
-Skrip di repo ini: MIT — lihat [LICENSE](LICENSE).
-Driver di folder `clevo-keyboard/`: **GPL-2.0** dari [wessel-novacustom/clevo-keyboard](https://github.com/wessel-novacustom/clevo-keyboard) (wajib, karena modul kernel).
+Scripts in this repo: MIT — see [LICENSE](LICENSE).
+The driver in `clevo-keyboard/`: **GPL-2.0**, from [wessel-novacustom/clevo-keyboard](https://github.com/wessel-novacustom/clevo-keyboard) (required, since it is a kernel module).

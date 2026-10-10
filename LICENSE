@@ -22,6 +22,6 @@ SOFTWARE.
 
 ---
 
-Catatan: folder `clevo-keyboard/` berisi kode driver kernel dari
-https://github.com/wessel-novacustom/clevo-keyboard yang dilisensikan
-GPL-2.0 (lihat clevo-keyboard/LICENSE), bukan MIT.
+Note: the `clevo-keyboard/` folder contains kernel driver code from
+https://github.com/wessel-novacustom/clevo-keyboard, which is licensed
+GPL-2.0 (see clevo-keyboard/LICENSE), not MIT.

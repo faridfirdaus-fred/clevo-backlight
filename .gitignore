@@ -1,4 +1,4 @@
-# artefak build driver kernel
+# kernel driver build artifacts
 *.ko
 *.o
 *.mod
@@ -7,7 +7,7 @@
 *.order
 .tmp_versions/
 
-# sampah editor / OS
+# editor / OS junk
 *~
 .DS_Store
 *.swp

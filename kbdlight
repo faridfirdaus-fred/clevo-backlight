@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
 #
-# kbdlight - kontrol backlight keyboard laptop Clevo (NP50RNA & sejenisnya) di Linux
+# kbdlight - control the keyboard backlight on Clevo laptops (NP50RNA and similar) on Linux
 #
-# Pakai:
-#   kbdlight                  nyalakan penuh, putih
-#   kbdlight on               sama seperti di atas
-#   kbdlight off              matikan
-#   kbdlight toggle           nyala <-> mati (cocok untuk shortcut OS)
-#   kbdlight up [langkah]     naikkan terang (default 64)
-#   kbdlight down [langkah]   turunkan terang (default 64)
-#   kbdlight level 0-255      set terang langsung
-#   kbdlight color R G B      set warna (0-255 tiap kanal)
-#   kbdlight color FF0000     set warna dari kode hex
-#   kbdlight FF0000           singkatan dari "color FF0000"
-#   kbdlight "255 128 0"      singkatan dari "color 255 128 0"
-#   kbdlight 128              singkatan dari "level 128"
-#   kbdlight status           tampilkan kondisi sekarang
-#   kbdlight help             tampilkan bantuan ini
+# Usage:
+#   kbdlight                  turn on fully, white
+#   kbdlight on               same as above
+#   kbdlight off              turn off
+#   kbdlight toggle           on <-> off (handy for an OS shortcut)
+#   kbdlight up [step]        increase brightness (default 64)
+#   kbdlight down [step]      decrease brightness (default 64)
+#   kbdlight level 0-255      set brightness directly
+#   kbdlight color R G B      set color (0-255 per channel)
+#   kbdlight color FF0000     set color from a hex code
+#   kbdlight FF0000           shorthand for "color FF0000"
+#   kbdlight "255 128 0"      shorthand for "color 255 128 0"
+#   kbdlight 128              shorthand for "level 128"
+#   kbdlight status           show the current state
+#   kbdlight help             show this help
 #
-# Warna terakhir diingat di ~/.cache/kbdlight-color, jadi "up"/"down"/"toggle"
-# tidak menghapus warna yang sedang dipakai.
+# The last color is remembered in ~/.cache/kbdlight-color, so "up"/"down"/"toggle"
+# do not wipe the color currently in use.
 #
 set -uo pipefail
 
@@ -31,30 +31,30 @@ STATE="${XDG_CACHE_HOME:-$HOME/.cache}/kbdlight-color"
 DEFAULT_STEP=64
 
 if [ ! -d "$LED" ]; then
-  echo "kbdlight: backlight tidak ditemukan di $LED" >&2
-  echo "  - Cek modul:  lsmod | grep -E 'tuxedo|clevo'" >&2
-  echo "  - Muat:       sudo modprobe tuxedo_keyboard clevo_wmi clevo_acpi" >&2
-  echo "  - Pasang:     sudo ./install.sh" >&2
+  echo "kbdlight: backlight not found at $LED" >&2
+  echo "  - Check the module:  lsmod | grep -E 'tuxedo|clevo'" >&2
+  echo "  - Load it:           sudo modprobe tuxedo_keyboard clevo_wmi clevo_acpi" >&2
+  echo "  - Install it:        sudo ./install.sh" >&2
   exit 1
 fi
 
 usage() {
-  # cetak blok komentar di atas file (baris 2 sampai sebelum "set -uo pipefail")
+  # print the comment block at the top of this file (line 2 up to "set -uo pipefail")
   sed -n '2,/^set /p' "$0" | sed '$d' | sed 's/^#\{1,2\} \{0,1\}//'
 }
 
-# tulis ke file sysfs; kalau tidak punya izin, coba sudo
-write() {  # $1=file $2=nilai
+# write to a sysfs file; fall back to sudo if we lack permission
+write() {  # $1=file $2=value
   if printf '%s' "$2" > "$1" 2>/dev/null; then
     return 0
   fi
   if command -v sudo >/dev/null 2>&1; then
     sudo -n sh -c "printf '%s' '$2' > '$1'" 2>/dev/null && return 0
-    echo "kbdlight: butuh izin menulis $1" >&2
-    echo "  - Masukkan user ke grup 'input', atau jalankan ulang install.sh" >&2
+    echo "kbdlight: need permission to write $1" >&2
+    echo "  - Add your user to the 'input' group, or re-run install.sh" >&2
     return 1
   fi
-  echo "kbdlight: tidak bisa menulis $1" >&2
+  echo "kbdlight: cannot write $1" >&2
   return 1
 }
 
@@ -70,7 +70,7 @@ max_bright() {
   printf '%s' "${v:-255}"
 }
 
-# ingat warna terakhir supaya up/down/toggle tidak menghapusnya
+# remember the last color so up/down/toggle do not wipe it
 save_color() { printf '%s %s %s\n' "$1" "$2" "$3" > "$STATE" 2>/dev/null || true; }
 load_color() {
   local r g b
@@ -88,7 +88,7 @@ set_color() {  # $1=R $2=G $3=B
   save_color "$1" "$2" "$3"
 }
 
-notify() {  # umpan balik opsional kalau ada notify-send (untuk shortcut OS)
+notify() {  # optional feedback via notify-send (useful when called from a shortcut)
   command -v notify-send >/dev/null 2>&1 || return 0
   notify-send -t 1200 -h string:x-canonical-private-synchronous:kbdlight "$@"
 }
@@ -100,7 +100,7 @@ apply_level() {  # $1=0-255
   [ "$v" -lt 0 ] && v=0
   write "$BRIGHT" "$v" || return 1
   echo "Brightness: $v/$max"
-  notify "Backlight keyboard" "Terang: $v/$max"
+  notify "Keyboard backlight" "Brightness: $v/$max"
 }
 
 clamp_level() {  # $1=level $2=max
@@ -144,7 +144,7 @@ case "$cmd" in
     if is_uint "${1:-}"; then step="$1"; fi
     cur=$(cur_bright)
     if [ "$cmd" = up ]; then
-      # dari 0 langsung nyala penuh, biar tidak perlu klik berkali-kali
+      # from 0, jump straight to full brightness so you do not have to press repeatedly
       [ "$cur" -eq 0 ] && v=255 || v=$((cur + step))
     else
       v=$((cur - step))
@@ -154,7 +154,7 @@ case "$cmd" in
 
   level)
     if ! is_uint "${1:-}"; then
-      echo "kbdlight: 'level' butuh angka 0-255" >&2; exit 1
+      echo "kbdlight: 'level' expects a number 0-255" >&2; exit 1
     fi
     apply_level "$(clamp_level "$1" "$(max_bright)")" || exit 1
     ;;
@@ -163,25 +163,25 @@ case "$cmd" in
     set -- "$@"
     if [ "$#" -ge 3 ] && is_uint "$1" && is_uint "$2" && is_uint "$3"; then
       set_color "$1" "$2" "$3" || exit 1
-      echo "Warna: RGB($1, $2, $3)"
-      notify "Backlight keyboard" "Warna: RGB($1, $2, $3)"
+      echo "Color: RGB($1, $2, $3)"
+      notify "Keyboard backlight" "Color: RGB($1, $2, $3)"
     elif [ "$#" -eq 1 ] && [[ "$1" =~ ^[0-9A-Fa-f]{6}$ ]]; then
       read -r r g b <<<"$(parse_hex "$1")"
       set_color "$r" "$g" "$b" || exit 1
-      echo "Warna: #$1 (RGB($r, $g, $b))"
-      notify "Backlight keyboard" "Warna: #$1"
+      echo "Color: #$1 (RGB($r, $g, $b))"
+      notify "Keyboard backlight" "Color: #$1"
     else
-      echo "kbdlight: 'color' butuh 'R G B' atau kode hex 6 digit" >&2
+      echo "kbdlight: 'color' expects 'R G B' or a 6-digit hex code" >&2
       exit 1
     fi
     apply_level 255 >/dev/null || exit 1
     ;;
 
   status)
-    echo "led             : $LED"
-    echo "brightness      : $(cur_bright)/$(max_bright)"
-    echo "multi_intensity : $(cat "$COLOR" 2>/dev/null)"
-    echo "warna tersimpan : $(load_color)"
+    echo "led            : $LED"
+    echo "brightness     : $(cur_bright)/$(max_bright)"
+    echo "multi_intensity: $(cat "$COLOR" 2>/dev/null)"
+    echo "saved color    : $(load_color)"
     ;;
 
   help|-h|--help)
@@ -194,18 +194,18 @@ case "$cmd" in
       # "255 0 0"
       set_color $arg || exit 1
       apply_level 255 >/dev/null || exit 1
-      echo "Warna: RGB($arg)"
+      echo "Color: RGB($arg)"
     elif [[ "$arg" =~ ^[0-9A-Fa-f]{6}$ ]]; then
       # FF0000
       read -r r g b <<<"$(parse_hex "$arg")"
       set_color "$r" "$g" "$b" || exit 1
       apply_level 255 >/dev/null || exit 1
-      echo "Warna: #$arg (RGB($r, $g, $b))"
+      echo "Color: #$arg (RGB($r, $g, $b))"
     elif is_uint "$arg"; then
       # 128
       apply_level "$(clamp_level "$arg" "$(max_bright)")" || exit 1
     else
-      echo "kbdlight: perintah tidak dikenal: $arg" >&2
+      echo "kbdlight: unknown command: $arg" >&2
       echo >&2
       usage >&2
       exit 1
