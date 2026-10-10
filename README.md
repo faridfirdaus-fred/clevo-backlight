@@ -1,14 +1,17 @@
-# axioo-backlight
+# clevo-backlight
 
-Nyalakan dan atur **backlight keyboard** laptop **Axioo Pongo 725** (barebone **Clevo NP50RNA**) di Linux/Ubuntu — termasuk model Clevo lain dengan keyboard RGB 1 zona.
+Nyalakan dan atur **backlight keyboard** laptop **Clevo** (barebone **NP50RNA** dan sejenisnya) di Linux/Ubuntu — untuk keyboard RGB 1 zona.
 
 > Di Ubuntu, tombol backlight keyboard tidak berfungsi karena firmware mengirim event-nya lewat **WMI/ACPI** dan Ubuntu tidak menyediakan drivernya. Repo ini memasang driver yang tepat **plus** sebuah CLI untuk mengendalikannya.
+
+**Kompatibel juga dengan laptop rebrand Clevo** — mis. **Axioo Pongo 725**, serta model lain yang memakai barebone Clevo/TUXEDO dengan keyboard RGB.
 
 ---
 
 ## Daftar isi
 
 - [Masalahnya](#masalahnya)
+- [Kompatibilitas](#kompatibilitas)
 - [Solusinya](#solusinya)
 - [Instalasi](#instalasi)
 - [Pemakaian CLI](#pemakaian-cli)
@@ -35,6 +38,19 @@ Cek sendiri:
 ls /sys/class/leds/ | grep -i kbd     # kosong = belum ada driver
 ```
 
+## Kompatibilitas
+
+Cara ini bekerja pada laptop yang memakai **barebone Clevo** dengan keyboard RGB dan mengirim hotkey backlight lewat WMI/ACPI `CLV0001`.
+
+| Perangkat | Status |
+|---|---|
+| Clevo NP50RNA | ✅ diuji |
+| **Axioo Pongo 725** (rebrand NP50RNA) | ✅ diuji |
+| Laptop Clevo/TUXEDO lain dengan keyboard RGB 1 zona | ⚠️ kemungkinan besar jalan — cek dulu `ls /sys/class/leds/ \| grep kbd` setelah modul dimuat |
+| Clevo dengan keyboard RGB per-tombol (multi zona) | ❌ belum didukung (repo ini hanya menangani 1 zona) |
+
+Laptop **rebrand Clevo** (Axioo, TUXEDO, Schenker, XMG, System76, dll.) memakai firmware yang sama, jadi kalau LED `rgb:kbd_backlight` muncul setelah driver dimuat, CLI-nya langsung bisa dipakai.
+
 ## Solusinya
 
 Tiga lapis, semuanya dipasang otomatis oleh `install.sh`:
@@ -52,8 +68,8 @@ Driver yang dipakai adalah [wessel-novacustom/clevo-keyboard](https://github.com
 Butuh Ubuntu/Debian dengan `dkms` dan kernel headers (installer yang memasangnya).
 
 ```bash
-git clone https://github.com/faridfirdaus-fred/axioo-backlight.git
-cd axioo-backlight
+git clone https://github.com/faridfirdaus-fred/clevo-backlight.git
+cd clevo-backlight
 sudo ./install.sh
 ```
 
@@ -162,9 +178,9 @@ Detail yang perlu diketahui:
 | `/usr/src/tuxedo-keyboard-3.2.10/` | sumber driver untuk DKMS |
 | `/usr/local/bin/kbdlight` | CLI |
 | `/usr/local/bin/kbdlightd` | daemon |
-| `/etc/modules-load.d/axioo-backlight.conf` | muat modul saat boot |
-| `/etc/udev/rules.d/99-axioo-backlight.rules` | izin LED untuk grup `input` |
-| `/etc/systemd/system/axioo-backlight.service` | set backlight putih saat boot |
+| `/etc/modules-load.d/clevo-backlight.conf` | muat modul saat boot |
+| `/etc/udev/rules.d/99-clevo-backlight.rules` | izin LED untuk grup `input` |
+| `/etc/systemd/system/clevo-backlight.service` | set backlight putih saat boot |
 | `/etc/systemd/system/kbdlightd.service` | daemon hotkey |
 
 ## Pemecahan masalah
@@ -202,13 +218,15 @@ dkms status
 sudo dkms autoinstall        # bangun ulang untuk kernel yang sedang jalan
 ```
 
+Kalau Anda pernah memasang versi lama repo ini (nama file `axioo-*`), `install.sh` akan menghapusnya otomatis di langkah 1/8.
+
 ## Uninstall
 
 ```bash
 sudo dkms remove -m tuxedo-keyboard -v 3.2.10 --all
-sudo rm -f /etc/modules-load.d/axioo-backlight.conf
-sudo rm -f /etc/udev/rules.d/99-axioo-backlight.rules
-sudo rm -f /etc/systemd/system/axioo-backlight.service
+sudo rm -f /etc/modules-load.d/clevo-backlight.conf
+sudo rm -f /etc/udev/rules.d/99-clevo-backlight.rules
+sudo rm -f /etc/systemd/system/clevo-backlight.service
 sudo rm -f /etc/systemd/system/kbdlightd.service
 sudo rm -f /usr/local/bin/kbdlight /usr/local/bin/kbdlightd
 sudo systemctl daemon-reload

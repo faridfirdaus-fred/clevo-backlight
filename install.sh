@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Installer backlight keyboard Axioo Pongo 725 (barebone Clevo NP50RNA) di Ubuntu.
+# Installer backlight keyboard laptop Clevo (barebone NP50RNA dan sejenisnya) di Ubuntu.
 #
 # Masalah: firmware laptop ini mengirim event hotkey backlight lewat WMI/ACPI
 # (GUID ABBC0F6D-... / device ACPI CLV0001), tapi Ubuntu tidak menyediakan
@@ -10,6 +10,8 @@
 # Solusi: pasang modul kernel tuxedo-keyboard (fork NovaCustom untuk semua laptop
 # Clevo) yang membuat LED /sys/class/leds/rgb:kbd_backlight, plus daemon kecil
 # untuk menangani tombol Fn-nya.
+#
+# Kompatibel juga dengan laptop rebrand Clevo, mis. Axioo Pongo 725.
 #
 # Jalankan:  sudo ./install.sh
 #
@@ -28,27 +30,52 @@ DKMS_NAME="tuxedo-keyboard"
 DKMS_VER="3.2.10"
 DKMS_SRC="/usr/src/$DKMS_NAME-$DKMS_VER"
 
+# nama file yang dipasang (pakai prefix "clevo-backlight")
+UNIT_MAIN="clevo-backlight.service"
+UNIT_DAEMON="kbdlightd.service"
+UDEV_RULE="99-clevo-backlight.rules"
+MODLOAD="clevo-backlight.conf"
+
 if [ ! -d "$SRC_DIR" ]; then
   echo "ERROR: folder sumber $SRC_DIR tidak ditemukan."
-  echo "Pastikan seluruh folder ~/axioo-backlight disalin utuh."
+  echo "Pastikan seluruh folder repo ini disalin utuh."
   exit 1
 fi
 
-echo "==> 0/7 Pastikan file bisa dieksekusi"
+echo "==> 0/8 Pastikan file bisa dieksekusi"
 chmod +x "$HERE/install.sh" "$HERE/kbdlight" "$HERE/kbdlightd" 2>/dev/null || true
 
-echo "==> 1/7 Install dependensi (dkms, build-essential, headers)"
+echo "==> 1/8 Bersihkan pemasangan versi lama (nama 'axioo-*')"
+# versi awal repo ini memakai prefix "axioo-"; hapus supaya tidak dobel
+for old in axioo-backlight.service; do
+  if [ -e "/etc/systemd/system/$old" ]; then
+    systemctl disable --now "$old" >/dev/null 2>&1 || true
+    rm -f "/etc/systemd/system/$old"
+    echo "    dihapus: /etc/systemd/system/$old"
+  fi
+done
+if [ -e /etc/udev/rules.d/99-axioo-backlight.rules ]; then
+  rm -f /etc/udev/rules.d/99-axioo-backlight.rules
+  echo "    dihapus: /etc/udev/rules.d/99-axioo-backlight.rules"
+fi
+if [ -e /etc/modules-load.d/axioo-backlight.conf ]; then
+  rm -f /etc/modules-load.d/axioo-backlight.conf
+  echo "    dihapus: /etc/modules-load.d/axioo-backlight.conf"
+fi
+systemctl daemon-reload 2>/dev/null || true
+
+echo "==> 2/8 Install dependensi (dkms, build-essential, headers)"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y dkms build-essential "linux-headers-$KVER"
 
-echo "==> 2/7 Lepas modul versi lama (kalau sedang termuat)"
+echo "==> 3/8 Lepas modul versi lama (kalau sedang termuat)"
 modprobe -r clevo_acpi       2>/dev/null || true
 modprobe -r clevo_wmi        2>/dev/null || true
 modprobe -r tuxedo_io        2>/dev/null || true
 modprobe -r tuxedo_keyboard  2>/dev/null || true
 
-echo "==> 3/7 Daftarkan ke DKMS (dibangun ulang otomatis tiap update kernel)"
+echo "==> 4/8 Daftarkan ke DKMS (dibangun ulang otomatis tiap update kernel)"
 if dkms status "$DKMS_NAME" 2>/dev/null | grep -q "$DKMS_NAME"; then
   dkms remove -m "$DKMS_NAME" -v "$DKMS_VER" --all 2>/dev/null || true
 fi
@@ -63,7 +90,7 @@ dkms add     -m "$DKMS_NAME" -v "$DKMS_VER"
 dkms build   -m "$DKMS_NAME" -v "$DKMS_VER" -k "$KVER"
 dkms install -m "$DKMS_NAME" -v "$DKMS_VER" -k "$KVER"
 
-echo "==> 4/7 Muat modul sekarang"
+echo "==> 5/8 Muat modul sekarang"
 modprobe tuxedo_keyboard
 modprobe clevo_wmi
 modprobe clevo_acpi
@@ -76,18 +103,18 @@ if [ ! -d /sys/class/leds/rgb:kbd_backlight ]; then
   echo
 fi
 
-echo "==> 5/7 Muat otomatis saat boot"
-printf 'tuxedo_keyboard\nclevo_wmi\nclevo_acpi\n' > /etc/modules-load.d/axioo-backlight.conf
+echo "==> 6/8 Muat otomatis saat boot"
+printf 'tuxedo_keyboard\nclevo_wmi\nclevo_acpi\n' > "/etc/modules-load.d/$MODLOAD"
 
-echo "==> 6/7 Izinkan user '$REAL_USER' mengatur backlight tanpa sudo"
+echo "==> 7/8 Izinkan user '$REAL_USER' mengatur backlight tanpa sudo"
 # brightness milik root:input -> cukup masuk grup input.
 # multi_intensity masih root-only -> perlu udev rule.
 #
 # PENTING: /sys/class/leds/rgb:kbd_backlight adalah SYMLINK. "chgrp -R" default
 # (-P) tidak mengikuti symlink, jadi rule-nya harus menyebut file targetnya
 # secara eksplisit (baru "-H"/path lewat symlink yang bekerja).
-cat > /etc/udev/rules.d/99-axioo-backlight.rules <<'EOF'
-# Axioo Pongo 725 (Clevo NP50RNA) - izinkan grup input atur backlight keyboard
+cat > "/etc/udev/rules.d/$UDEV_RULE" <<'EOF'
+# Laptop Clevo (NP50RNA dan sejenisnya) - izinkan grup input atur backlight keyboard
 SUBSYSTEM=="leds", KERNEL=="rgb:kbd_backlight", ACTION=="add|change", RUN+="/bin/chgrp -H input /sys/class/leds/rgb:kbd_backlight/brightness /sys/class/leds/rgb:kbd_backlight/multi_intensity", RUN+="/bin/chmod g+w /sys/class/leds/rgb:kbd_backlight/brightness /sys/class/leds/rgb:kbd_backlight/multi_intensity"
 EOF
 udevadm control --reload-rules 2>/dev/null || true
@@ -108,15 +135,15 @@ fi
 install -m 755 "$HERE/kbdlight"  /usr/local/bin/kbdlight
 install -m 755 "$HERE/kbdlightd" /usr/local/bin/kbdlightd
 
-echo "==> 7/7 Aktifkan service: set backlight saat boot + daemon hotkey"
+echo "==> 8/8 Aktifkan service: set backlight saat boot + daemon hotkey"
 #
 # Catatan penting: modul kernel hanya MELAPORKAN tombol Fn+volume up/down sebagai
 # event KEY_KBDILLUMUP/DOWN, tidak mengubah brightness sendiri (keyboard RGB).
 # Jadi harus ada proses di userspace -> kbdlightd.
 #
-cat > /etc/systemd/system/axioo-backlight.service <<'EOF'
+cat > "/etc/systemd/system/$UNIT_MAIN" <<'EOF'
 [Unit]
-Description=Set backlight keyboard Axioo Pongo 725 ke putih terang
+Description=Set backlight keyboard Clevo ke putih terang
 After=systemd-modules-load.service
 Wants=systemd-modules-load.service
 
@@ -134,9 +161,9 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
 
-cat > /etc/systemd/system/kbdlightd.service <<'EOF'
+cat > "/etc/systemd/system/$UNIT_DAEMON" <<'EOF'
 [Unit]
-Description=Daemon hotkey backlight keyboard Axioo Pongo 725
+Description=Daemon hotkey backlight keyboard Clevo
 After=systemd-modules-load.service
 Wants=systemd-modules-load.service
 
@@ -154,11 +181,11 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable axioo-backlight.service
-systemctl enable kbdlightd.service
+systemctl enable "$UNIT_MAIN"
+systemctl enable "$UNIT_DAEMON"
 # jangan hentikan installer kalau salah satu service belum bisa jalan
-systemctl restart axioo-backlight.service || true
-systemctl restart kbdlightd.service       || true
+systemctl restart "$UNIT_MAIN"   || true
+systemctl restart "$UNIT_DAEMON" || true
 
 sleep 1
 echo
@@ -175,7 +202,7 @@ else
   echo "tidak ada"
 fi
 printf "   daemon     : "
-systemctl is-active kbdlightd.service 2>/dev/null || echo "tidak aktif"
+systemctl is-active "$UNIT_DAEMON" 2>/dev/null || echo "tidak aktif"
 echo
 echo " Kontrol manual (tanpa sudo, setelah logout/login):"
 echo "   kbdlight              nyalakan penuh (putih)"

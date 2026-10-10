@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-kbdlightd - daemon backlight keyboard Axioo Pongo 725 (Clevo NP50RNA)
+kbdlightd - daemon backlight keyboard laptop Clevo (NP50RNA & sejenisnya)
 
 Kenapa perlu daemon ini:
   Modul kernel tuxedo_keyboard membuat LED /sys/class/leds/rgb:kbd_backlight dan

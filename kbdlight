@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# kbdlight - kontrol backlight keyboard Clevo / Axioo Pongo 725 (NP50RNA) di Linux
+# kbdlight - kontrol backlight keyboard laptop Clevo (NP50RNA & sejenisnya) di Linux
 #
 # Pakai:
 #   kbdlight                  nyalakan penuh, putih
