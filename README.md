@@ -238,4 +238,4 @@ sudo gpasswd -d "$USER" input
 ## License
 
 Scripts in this repo: MIT — see [LICENSE](LICENSE).
-The driver in `clevo-keyboard/`: **GPL-2.0**, from [wessel-novacustom/clevo-keyboard](https://github.com/wessel-novacustom/clevo-keyboard) (required, since it is a kernel module).
+The driver in `clevo-keyboard/`: **GPL-3.0**, from [wessel-novacustom/clevo-keyboard](https://github.com/wessel-novacustom/clevo-keyboard) (required, since it is a kernel module).
