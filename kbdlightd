@@ -41,7 +41,22 @@ RESCAN = 5                     # seconds
 WANTED_NAMES = ("TUXEDO Keyboard", "keyd virtual keyboard")
 HANDLED = (KEY_KBDILLUMUP, KEY_KBDILLUMDOWN, KEY_KBDILLUMTOGGLE, KEY_LIGHTS_TOGGLE)
 
+DE_POWER_DAEMONS = ("gsd-power", "org_kde_powerde")
+DE_HANDLED_KEYS = (KEY_KBDILLUMUP, KEY_KBDILLUMDOWN, KEY_KBDILLUMTOGGLE)
+
 _last = {}
+
+
+def de_handles_kbd_backlight():
+    """Avoid double-stepping when GNOME/KDE power daemon already handles Fn keys."""
+    for comm_path in glob.glob("/proc/[0-9]*/comm"):
+        try:
+            with open(comm_path) as f:
+                if f.read().strip() in DE_POWER_DAEMONS:
+                    return True
+        except OSError:
+            pass
+    return False
 
 
 def log(*a):
@@ -109,6 +124,10 @@ def handle(code):
     if now - _last.get(code, 0) < DEBOUNCE:
         return                                   # duplicate event from keyd
     _last[code] = now
+
+    if code in DE_HANDLED_KEYS and de_handles_kbd_backlight():
+        log(f"key {code}: skipped (handled by desktop power daemon)")
+        return
 
     cur = read_brightness()
 

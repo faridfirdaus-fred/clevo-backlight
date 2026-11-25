@@ -27,7 +27,7 @@ LED="${KBDLIGHT_LED:-/sys/class/leds/rgb:kbd_backlight}"
 BRIGHT="$LED/brightness"
 MAXB="$LED/max_brightness"
 COLOR="$LED/multi_intensity"
-STATE="${XDG_CACHE_HOME:-$HOME/.cache}/kbdlight-color"
+STATE="${XDG_CACHE_HOME:-${HOME:-/root}/.cache}/kbdlight-color"
 DEFAULT_STEP=64
 
 if [ ! -d "$LED" ]; then
@@ -43,15 +43,30 @@ usage() {
   sed -n '2,/^set /p' "$0" | sed '$d' | sed 's/^#\{1,2\} \{0,1\}//'
 }
 
-# write to a sysfs file; fall back to sudo if we lack permission
+# sync brightness with UPower so GNOME Quick Settings slider stays up to date
+sync_upower() {  # $1=value
+  [ "$LED" = "/sys/class/leds/rgb:kbd_backlight" ] || return 1
+  command -v busctl >/dev/null 2>&1 || return 1
+  busctl call org.freedesktop.UPower /org/freedesktop/UPower/KbdBacklight \
+    org.freedesktop.UPower.KbdBacklight SetBrightness i "$1" >/dev/null 2>&1
+}
+
+# write to a sysfs file; fall back to UPower/brightnessctl or passwordless sudo
 write() {  # $1=file $2=value
-  if printf '%s' "$2" > "$1" 2>/dev/null; then
+  if [ -w "$1" ] && printf '%s' "$2" > "$1" 2>/dev/null; then
+    [ "$1" = "$BRIGHT" ] && sync_upower "$2" || true
     return 0
+  fi
+  if [ "$1" = "$BRIGHT" ]; then
+    sync_upower "$2" && return 0
+    if command -v brightnessctl >/dev/null 2>&1; then
+      brightnessctl -q -d "$(basename "$LED")" set "$2" >/dev/null 2>&1 && return 0
+    fi
   fi
   if command -v sudo >/dev/null 2>&1; then
     sudo -n sh -c "printf '%s' '$2' > '$1'" 2>/dev/null && return 0
     echo "kbdlight: need permission to write $1" >&2
-    echo "  - Add your user to the 'input' group, or re-run install.sh" >&2
+    echo "  - Add your user to the 'input' group (then log out/in), or re-run install.sh" >&2
     return 1
   fi
   echo "kbdlight: cannot write $1" >&2
@@ -71,7 +86,10 @@ max_bright() {
 }
 
 # remember the last color so up/down/toggle do not wipe it
-save_color() { printf '%s %s %s\n' "$1" "$2" "$3" > "$STATE" 2>/dev/null || true; }
+save_color() {
+  mkdir -p "$(dirname "$STATE")" 2>/dev/null || true
+  printf '%s %s %s\n' "$1" "$2" "$3" > "$STATE" 2>/dev/null || true
+}
 load_color() {
   local r g b
   if [ -r "$STATE" ]; then
@@ -84,13 +102,32 @@ load_color() {
 }
 
 set_color() {  # $1=R $2=G $3=B
-  write "$COLOR" "$1 $2 $3" || return 1
+  local target="$1 $2 $3" cur
+  cur=$(cat "$COLOR" 2>/dev/null || true)
+  if [ "$cur" != "$target" ]; then
+    write "$COLOR" "$target" || return 1
+  fi
   save_color "$1" "$2" "$3"
 }
 
 notify() {  # optional feedback via notify-send (useful when called from a shortcut)
+  [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}${DBUS_SESSION_BUS_ADDRESS:-}" ] || return 0
   command -v notify-send >/dev/null 2>&1 || return 0
-  notify-send -t 1200 -h string:x-canonical-private-synchronous:kbdlight "$@"
+  local nid_file="${XDG_RUNTIME_DIR:-/tmp}/kbdlight.nid"
+  local old_id=0 new_id=""
+  if [ -r "$nid_file" ]; then
+    read -r old_id < "$nid_file" 2>/dev/null || old_id=0
+  fi
+  if [[ "$old_id" =~ ^[0-9]+$ ]] && [ "$old_id" -gt 0 ]; then
+    new_id=$(notify-send -e -t 1000 -a "Keyboard Backlight" -i keyboard-brightness-symbolic -p -r "$old_id" "$@" 2>/dev/null || true)
+  else
+    new_id=$(notify-send -e -t 1000 -a "Keyboard Backlight" -i keyboard-brightness-symbolic -p "$@" 2>/dev/null || true)
+  fi
+  if [[ "${new_id:-}" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$new_id" > "$nid_file" 2>/dev/null || true
+  else
+    notify-send -t 1200 -h boolean:transient:true -h string:x-canonical-private-synchronous:kbdlight "$@" 2>/dev/null || true
+  fi
 }
 
 apply_level() {  # $1=0-255

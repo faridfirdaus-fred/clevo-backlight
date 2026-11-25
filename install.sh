@@ -25,7 +25,13 @@ fi
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SRC_DIR="$HERE/clevo-keyboard"
-REAL_USER="${SUDO_USER:-$USER}"
+if [ -n "${SUDO_USER:-}" ]; then
+  REAL_USER="$SUDO_USER"
+elif [ -n "${PKEXEC_UID:-}" ]; then
+  REAL_USER="$(id -nu "$PKEXEC_UID")"
+else
+  REAL_USER="$USER"
+fi
 KVER="$(uname -r)"
 DKMS_NAME="tuxedo-keyboard"
 DKMS_VER="3.2.10"
@@ -65,10 +71,17 @@ if [ -e /etc/modules-load.d/axioo-backlight.conf ]; then
 fi
 systemctl daemon-reload 2>/dev/null || true
 
-echo "==> 2/8 Install dependencies (dkms, build-essential, headers)"
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y dkms build-essential "linux-headers-$KVER"
+echo "==> 2/8 Install dependencies (dkms, compiler, kernel headers)"
+if command -v dnf >/dev/null 2>&1; then
+  dnf install -y dkms gcc make "kernel-devel-$KVER" || dnf install -y dkms gcc make kernel-devel
+elif command -v apt-get >/dev/null 2>&1; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y dkms build-essential "linux-headers-$KVER"
+else
+  echo "ERROR: unsupported package manager (need dnf or apt-get)." >&2
+  exit 1
+fi
 
 echo "==> 3/8 Unload old module versions (if currently loaded)"
 modprobe -r clevo_acpi       2>/dev/null || true
@@ -182,6 +195,14 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
+if command -v restorecon >/dev/null 2>&1; then
+  restorecon -v /usr/local/bin/kbdlight /usr/local/bin/kbdlightd \
+    "/etc/modules-load.d/$MODLOAD" \
+    "/etc/udev/rules.d/$UDEV_RULE" \
+    "/etc/systemd/system/$UNIT_MAIN" \
+    "/etc/systemd/system/$UNIT_DAEMON" >/dev/null 2>&1 || true
+fi
+systemctl enable dkms.service >/dev/null 2>&1 || true
 systemctl enable "$UNIT_MAIN"
 systemctl enable "$UNIT_DAEMON"
 # do not abort the installer if one of the services cannot start yet

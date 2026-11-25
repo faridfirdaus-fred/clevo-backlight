@@ -1,6 +1,6 @@
 # clevo-backlight
 
-Turn on and control the **keyboard backlight** on **Clevo** laptops (barebone **NP50RNA** and similar) on Linux/Ubuntu — for single-zone RGB keyboards.
+Turn on and control the **keyboard backlight** on **Clevo** laptops (barebone **NP50RNA** and similar) on Linux (Ubuntu/Debian and Fedora) — for single-zone RGB keyboards.
 
 > On Ubuntu the keyboard backlight keys do nothing because the firmware sends their events over **WMI/ACPI** and Ubuntu ships no driver for it. This repo installs the right driver **plus** a CLI to control it.
 
@@ -65,7 +65,7 @@ The driver used is [wessel-novacustom/clevo-keyboard](https://github.com/wessel-
 
 ## Installation
 
-Requires Ubuntu/Debian with `dkms` and kernel headers (the installer takes care of those).
+Requires Ubuntu/Debian (`apt`) or Fedora (`dnf`) with `dkms` and kernel headers (the installer takes care of those). Includes Linux 7.x compatibility for `clevo_acpi` and SELinux labeling on Fedora.
 
 ```bash
 git clone https://github.com/faridfirdaus-fred/clevo-backlight.git
@@ -132,9 +132,11 @@ binds {
 
 | Name | Command | Shortcut |
 |---|---|---|
-| Backlight toggle | `kbdlight toggle` | `Super+F1` |
+| Backlight toggle | `kbdlight toggle` | `Super+F4` (`Super+F1` is bound to Help by default) |
 | Backlight up | `kbdlight up` | `Super+F2` |
 | Backlight down | `kbdlight down` | `Super+F3` |
+
+`kbdlight` also syncs brightness with UPower so the GNOME Quick Settings slider stays in sync, and `kbdlightd` defers hardware `KEY_KBDILLUM*` keys to `gsd-power` when running under GNOME to avoid double-stepping.
 
 ### KDE Plasma
 
